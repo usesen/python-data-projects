@@ -24,18 +24,12 @@ class NLPEngine:
             
     def _connect_to_database(self):
         """Veritabanı bağlantısı oluştur"""
-        connection_string = "mssql+pyodbc://sa:123@localhost/TicketDB?driver=SQL+Server"
+        connection_string = "mssql+pyodbc://usesen:usesen@DESKTOP-6QR83E3\\UGURMSSQL/FSM_Tickets?driver=SQL+Server"
         return create_engine(connection_string)
         
     def _initialize_engine_and_data(self):
         """Initialize engine and load all required data"""
         self.engine = self._connect_to_database()
-        
-        print("Tablo yapısı kontrol ediliyor...")
-        self.check_synonyms_table()
-        
-        print("Eş anlamlı kelimeler yükleniyor...")
-        self._load_synonyms_cache()
         
         print("Veriler yükleniyor...")
         self.load_data()
@@ -46,25 +40,6 @@ class NLPEngine:
         print("Model eğitiliyor...")
         self.train_model()
         
-    def check_synonyms_table(self):
-        """Eş anlamlılar tablosunu kontrol et ve gerekirse oluştur"""
-        try:
-            query = """
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Synonyms')
-            CREATE TABLE Synonyms (
-                ID INT IDENTITY(1,1) PRIMARY KEY,
-                Text1 NVARCHAR(100),
-                Text2 NVARCHAR(100),
-                Category NVARCHAR(50),
-                CreatedDate DATETIME DEFAULT GETDATE()
-            )
-            """
-            with self.engine.connect() as conn:
-                conn.execute(text(query))
-                
-        except Exception as e:
-            print(f"Tablo kontrol hatası: {str(e)}")
-            
     def load_data(self):
         """Veritabanından verileri yükle"""
         try:
