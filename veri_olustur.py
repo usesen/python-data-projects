@@ -25,6 +25,12 @@ cozum_detaylari = {
                 'Fan yağlaması yapıldı',
                 'Fan değişimi yapıldı',
                 'Termal macun yenilendi'
+            ],
+            'Ekran': [
+                'Ekran kartı sürücüleri güncellendi',
+                'Ekran kablosu kontrol edildi',
+                'Ekran kartı temizlendi',
+                'BIOS ekran ayarları sıfırlandı'
             ]
         },
         'Yazıcı Arıza': {
@@ -39,6 +45,26 @@ cozum_detaylari = {
                 'Drum ünitesi değiştirildi',
                 'Kalibrasyon yapıldı',
                 'Yazıcı kafası temizlendi'
+            ],
+            'Ağ Bağlantısı': [
+                'Yazıcı IP ayarları yapılandırıldı',
+                'Yazıcı sürücüleri güncellendi',
+                'Ağ portları kontrol edildi',
+                'Yazıcı ağ kartı resetlendi'
+            ]
+        },
+        'Ağ Donanımı': {
+            'Switch': [
+                'Switch portları kontrol edildi',
+                'Switch firmware güncellendi',
+                'Port yapılandırması düzeltildi',
+                'Switch resetlendi'
+            ],
+            'Router': [
+                'Router ayarları kontrol edildi',
+                'Router firmware güncellendi',
+                'Router resetlendi',
+                'Router portları test edildi'
             ]
         }
     },
@@ -55,6 +81,12 @@ cozum_detaylari = {
                 'OST dosyası yeniden oluşturuldu',
                 'Exchange bağlantısı yeniden yapılandırıldı',
                 'Outlook güvenli modda başlatıldı ve onarıldı'
+            ],
+            'Word': [
+                'Word önbelleği temizlendi',
+                'Word ayarları sıfırlandı',
+                'Normal.dotm şablonu yenilendi',
+                'Word eklentileri devre dışı bırakıldı'
             ]
         },
         'ERP': {
@@ -63,6 +95,26 @@ cozum_detaylari = {
                 'SAP oturum parametreleri sıfırlandı',
                 'SAP GUI yeniden kuruldu',
                 'Sistem bağlantı testi yapıldı'
+            ],
+            'Veritabanı': [
+                'Veritabanı bağlantısı kontrol edildi',
+                'Veritabanı önbelleği temizlendi',
+                'Kullanıcı yetkileri güncellendi',
+                'Veritabanı servisi yeniden başlatıldı'
+            ]
+        },
+        'İşletim Sistemi': {
+            'Windows': [
+                'Windows güncellemeleri yapıldı',
+                'Sistem dosyaları onarıldı',
+                'Registry temizliği yapıldı',
+                'Sistem geri yükleme yapıldı'
+            ],
+            'Sürücüler': [
+                'Sürücüler güncellendi',
+                'Sorunlu sürücüler kaldırılıp yeniden kuruldu',
+                'Sürücü uyumluluk kontrolü yapıldı',
+                'Sürücü önbelleği temizlendi'
             ]
         }
     },
@@ -80,36 +132,88 @@ cozum_detaylari = {
                 'Split tunneling ayarları yapıldı',
                 'QoS ayarları kontrol edildi'
             ]
+        },
+        'İnternet': {
+            'Bağlantı': [
+                'DNS ayarları güncellendi',
+                'IP yapılandırması kontrol edildi',
+                'Ağ kartı sıfırlandı',
+                'Modem/router yeniden başlatıldı'
+            ],
+            'Performans': [
+                'Hat kalitesi ölçüldü',
+                'Ağ trafik analizi yapıldı',
+                'Bandwidth optimizasyonu yapıldı',
+                'Cache temizliği yapıldı'
+            ]
+        },
+        'Ağ Erişimi': {
+            'Paylaşım': [
+                'Paylaşım izinleri kontrol edildi',
+                'Grup politikaları güncellendi',
+                'Ağ keşfi ayarları düzeltildi',
+                'Güvenlik duvarı kuralları güncellendi'
+            ],
+            'Domain': [
+                'Domain bağlantısı kontrol edildi',
+                'GPO ayarları güncellendi',
+                'Domain kullanıcı yetkileri kontrol edildi',
+                'Domain controller bağlantısı test edildi'
+            ]
         }
     }
 }
 
-# Problem açıklamaları
+# Problem detayları
 problem_detaylari = {
     'PC Arıza': [
         'Bilgisayar çok yavaş açılıyor ve fan sesi çok yüksek',
         'Bilgisayar sürekli donuyor ve yeniden başlıyor',
-        'Ekran görüntüsü gelmiyor, sadece ses var'
+        'Ekran görüntüsü gelmiyor, sadece ses var',
+        'Bilgisayar açılmıyor, güç ışığı yanmıyor',
+        'Mavi ekran hatası veriyor'
     ],
     'Yazıcı Arıza': [
         'Yazıcı kağıt sıkıştırıyor ve hata veriyor',
         'Çıktılar silik ve soluk çıkıyor',
-        'Yazıcı ağda görünmüyor'
+        'Yazıcı ağda görünmüyor',
+        'Yazıcı sürekli offline oluyor',
+        'Yazıcı çıktı almıyor, hata veriyor'
     ],
     'Office': [
         'Excel dosyası açılmıyor, sürekli kilitleniyor',
         'Outlook sürekli yanıt vermiyor hatası veriyor',
-        'Word belgeleri kaydedilemiyor'
+        'Word belgeleri kaydedilemiyor',
+        'Excel makroları çalışmıyor',
+        'Outlook e-posta göndermiyor'
     ],
     'ERP': [
         'SAP sistemine giriş yapılamıyor',
         'SAP ekranı donuyor ve yanıt vermiyor',
-        'SAP raporları açılmıyor'
+        'SAP raporları açılmıyor',
+        'SAP transaction hatası alıyorum',
+        'SAP performansı çok yavaş'
     ],
     'VPN': [
         'VPN bağlantısı kurulamıyor, timeout hatası',
         'VPN bağlantısı çok yavaş',
-        'VPN sürekli kopuyor'
+        'VPN sürekli kopuyor',
+        'VPN client açılmıyor',
+        'VPN authentication hatası'
+    ],
+    'İnternet': [
+        'İnternet bağlantısı yok',
+        'İnternet çok yavaş',
+        'Web sayfaları açılmıyor',
+        'DNS hatası alıyorum',
+        'İnternet sürekli kesiliyor'
+    ],
+    'Ağ Erişimi': [
+        'Paylaşımlı klasörlere erişilemiyor',
+        'Domain oturumu açılmıyor',
+        'Ağ yazıcılarına erişilemiyor',
+        'Ağ sürücüleri bağlanmıyor',
+        'Uzak masaüstü bağlantısı kurulamıyor'
     ]
 }
 
