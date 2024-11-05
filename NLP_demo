@@ -1,0 +1,72 @@
+import pyodbc
+import pandas as pd
+
+# SQL Server Bağlantısı
+conn = pyodbc.connect('DRIVER={SQL Server};SERVER=DESKTOP-6QR83E3\\UGURMSSQL;DATABASE=FSM_Tickets;UID=usesen;PWD=usesen')
+cursor = conn.cursor()
+
+# Veri durumunu kontrol edelim
+check_query = """
+SELECT COUNT(*) as BosKayitSayisi,
+       COUNT(Problem_Aciklamasi) as Problem_Dolu,
+       COUNT(Cozum_Aciklamasi) as Cozum_Dolu,
+       COUNT(Yapilan_Islemler) as Islemler_Dolu,
+       COUNT(Root_Cause) as RootCause_Dolu
+FROM ticket_table
+"""
+cursor.execute(check_query)
+result = cursor.fetchone()
+print("Veri Durumu:", result)
+
+# Update işlemini yapalım
+update_query = """
+UPDATE ticket_table
+SET 
+    Problem_Aciklamasi = CONCAT(
+        'Kategori: ', ISNULL(Kategori, ''), 
+        ' | Alt Kategori: ', ISNULL(Alt_Kategori, ''),
+        ' | Problem: ', ISNULL(Problem_Aciklamasi, '')
+    ),
+    Cozum_Aciklamasi = CASE 
+        WHEN Cozum_Detay IS NOT NULL THEN
+            CONCAT(
+                'Teknisyen Seviye: ', ISNULL(Teknisyen_Seviye, ''),
+                ' | Çözüm: ', ISNULL(Cozum_Detay, ''),
+                CASE 
+                    WHEN Tekrar_Acilma = 1 THEN ' | Not: Bu ticket tekrar açılmıştır!'
+                    ELSE ''
+                END,
+                CASE 
+                    WHEN Musteri_Memnuniyeti IS NOT NULL 
+                    THEN CONCAT(' | Müşteri Memnuniyeti: ', Musteri_Memnuniyeti)
+                    ELSE ''
+                END
+            )
+        ELSE 'Belirtilmemiş'
+    END,
+    Yapilan_Islemler = CASE 
+        WHEN Cozum_Detay LIKE '%1.%' OR Cozum_Detay LIKE '%1)%'
+        THEN Cozum_Detay
+        ELSE CONCAT(
+            'Çözüm Süresi: ', ISNULL(Gercek_Cozum_Suresi_dk, 0), ' dk',
+            ' | İşlem: ', ISNULL(Cozum_Detay, 'Detay girilmemiş')
+        )
+    END,
+    Root_Cause = CASE
+        WHEN Tekrar_Acilma = 1 AND Onceki_Ticket_ID IS NOT NULL
+        THEN 'Önceki çözüm yetersiz kalmış'
+        ELSE 'Analiz edilecek'
+    END
+WHERE Durum = 'Kapandi'
+"""
+
+try:
+    cursor.execute(update_query)
+    conn.commit()
+    print("Update işlemi başarılı!")
+except Exception as e:
+    conn.rollback()
+    print("Hata oluştu:", str(e))
+finally:
+    cursor.close()
+    conn.close() 

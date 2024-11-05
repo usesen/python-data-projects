@@ -1,193 +1,296 @@
-import pyodbc
 import random
 from datetime import datetime, timedelta
+import pyodbc
 import numpy as np
 
+# Kategoriler ve alt kategoriler
+kategoriler = {
+    'Donanım': ['PC Arıza', 'Yazıcı Arıza', 'Ağ Donanımı'],
+    'Yazılım': ['Office', 'ERP', 'İşletim Sistemi'],
+    'Ağ': ['VPN', 'İnternet', 'Ağ Erişimi']
+}
+
+# Çözüm detayları
+cozum_detaylari = {
+    'Donanım': {
+        'PC Arıza': {
+            'Yavaşlık': [
+                'RAM bellek temizliği yapıldı, soğutucu macun yenilendi',
+                'Disk birleştirme yapıldı, gereksiz dosyalar temizlendi',
+                'İşlemci soğutucu fanı temizlendi',
+                'BIOS ayarları kontrol edildi ve güncellendi'
+            ],
+            'Fan Sesi': [
+                'Fan temizliği yapıldı',
+                'Fan yağlaması yapıldı',
+                'Fan değişimi yapıldı',
+                'Termal macun yenilendi'
+            ]
+        },
+        'Yazıcı Arıza': {
+            'Kağıt Sıkışması': [
+                'Kağıt yolu temizlendi, bakım yapıldı',
+                'Pickup roller değiştirildi',
+                'Kağıt sensörleri temizlendi',
+                'Yazıcı firmware güncellendi'
+            ],
+            'Baskı Kalitesi': [
+                'Toner/kartuş değiştirildi',
+                'Drum ünitesi değiştirildi',
+                'Kalibrasyon yapıldı',
+                'Yazıcı kafası temizlendi'
+            ]
+        }
+    },
+    'Yazılım': {
+        'Office': {
+            'Excel': [
+                'Office önbelleği temizlendi',
+                'Excel ayarları sıfırlandı',
+                'Office onarıldı',
+                'Office kaldırılıp yeniden kuruldu'
+            ],
+            'Outlook': [
+                'Outlook profili yeniden oluşturuldu',
+                'OST dosyası yeniden oluşturuldu',
+                'Exchange bağlantısı yeniden yapılandırıldı',
+                'Outlook güvenli modda başlatıldı ve onarıldı'
+            ]
+        },
+        'ERP': {
+            'SAP': [
+                'SAP GUI önbelleği temizlendi',
+                'SAP oturum parametreleri sıfırlandı',
+                'SAP GUI yeniden kuruldu',
+                'Sistem bağlantı testi yapıldı'
+            ]
+        }
+    },
+    'Ağ': {
+        'VPN': {
+            'Bağlantı': [
+                'VPN client yeniden başlatıldı',
+                'VPN ayarları kontrol edildi',
+                'DNS ayarları güncellendi',
+                'Firewall kuralları kontrol edildi'
+            ],
+            'Performans': [
+                'Ağ kartı sürücüleri güncellendi',
+                'MTU değeri optimize edildi',
+                'Split tunneling ayarları yapıldı',
+                'QoS ayarları kontrol edildi'
+            ]
+        }
+    }
+}
+
+# Problem açıklamaları
+problem_detaylari = {
+    'PC Arıza': [
+        'Bilgisayar çok yavaş açılıyor ve fan sesi çok yüksek',
+        'Bilgisayar sürekli donuyor ve yeniden başlıyor',
+        'Ekran görüntüsü gelmiyor, sadece ses var'
+    ],
+    'Yazıcı Arıza': [
+        'Yazıcı kağıt sıkıştırıyor ve hata veriyor',
+        'Çıktılar silik ve soluk çıkıyor',
+        'Yazıcı ağda görünmüyor'
+    ],
+    'Office': [
+        'Excel dosyası açılmıyor, sürekli kilitleniyor',
+        'Outlook sürekli yanıt vermiyor hatası veriyor',
+        'Word belgeleri kaydedilemiyor'
+    ],
+    'ERP': [
+        'SAP sistemine giriş yapılamıyor',
+        'SAP ekranı donuyor ve yanıt vermiyor',
+        'SAP raporları açılmıyor'
+    ],
+    'VPN': [
+        'VPN bağlantısı kurulamıyor, timeout hatası',
+        'VPN bağlantısı çok yavaş',
+        'VPN sürekli kopuyor'
+    ]
+}
+
+def get_solution_detail(kategori, alt_kategori, problem_tipi):
+    try:
+        cozumler = cozum_detaylari[kategori][alt_kategori][problem_tipi]
+        return random.choice(cozumler)
+    except KeyError:
+        return "Standart prosedür uygulandı"
+
 def test_verisi_olustur():
-    # SQL Server Bağlantısı
+    # SQL Server bağlantısı
     conn = pyodbc.connect('DRIVER={SQL Server};SERVER=DESKTOP-6QR83E3\\UGURMSSQL;DATABASE=FSM_Tickets;UID=usesen;PWD=usesen')
     cursor = conn.cursor()
 
-    # Tickets tablosunu sil
-    cursor.execute("DROP TABLE IF EXISTS Tickets")
-    conn.commit()
+    try:
+        # Önce tabloyu kontrol et ve varsa sil
+        cursor.execute("""
+        IF OBJECT_ID('dbo.Tickets', 'U') IS NOT NULL 
+            DROP TABLE dbo.Tickets
+        """)
+        conn.commit()
+        print("Eski tablo silindi.")
 
-    # Tabloyu oluştur
-    cursor.execute("""
-    CREATE TABLE [dbo].[Tickets] (
-        [Ticket_ID] VARCHAR(10),
-        [Bolge] NVARCHAR(50),
-        [Oncelik] NVARCHAR(20),
-        [Kategori] NVARCHAR(20),
-        [Alt_Kategori] NVARCHAR(50),
-        [Teknisyen] NVARCHAR(50),
-        [Teknisyen_Seviye] NVARCHAR(20),
-        [Olusturma_Tarihi] DATETIME,
-        [Atama_Tarihi] DATETIME,
-        [Cozum_Tarihi] DATETIME,
-        [Is_Gununde_mi] BIT,
-        [Mesai_Saatinde_mi] BIT,
-        [Hedef_Atama_Suresi_dk] INT,
-        [Gercek_Atama_Suresi_dk] INT,
-        [Hedef_Cozum_Suresi_dk] INT,
-        [Gercek_Cozum_Suresi_dk] INT,
-        [Atama_SLA_Uyumu] BIT,
-        [Cozum_SLA_Uyumu] BIT,
-        [Musteri_Memnuniyeti] FLOAT,
-        [Cozum_Detay] NVARCHAR(50),
-        [Tekrar_Acilma] BIT,
-        [Onceki_Ticket_ID] VARCHAR(10) NULL,
-        [Kaynak_Sistem] NVARCHAR(50),
-        PRIMARY KEY ([Ticket_ID])
-    )
-    """)
-    conn.commit()
-
-    # Sabit listeler
-    # Bölgelere göre ağırlıklar (büyük şehirlerde daha fazla ticket)
-    bolge_agirliklari = {
-        'İstanbul-Avrupa': 0.25,    # %25
-        'İstanbul-Anadolu': 0.20,   # %20
-        'Ankara': 0.20,             # %20
-        'İzmir': 0.15,              # %15
-        'Bursa': 0.10,              # %10
-        'Antalya': 0.10             # %10
-    }
-    
-    oncelikler = ['Yüksek', 'Orta', 'Düşük']
-    teknisyenler = {
-        'İstanbul-Avrupa': {
-            'Ahmet Yılmaz': 'Senior',
-            'Berk Demir': 'Senior',
-            'Ayşe Kaya': 'Mid-Level',
-            'Can Yıldız': 'Junior',
-            'Zeynep Aksoy': 'Junior'
-        },
-        'İstanbul-Anadolu': {
-            'Ali Öztürk': 'Senior',
-            'Fatma Şahin': 'Senior',
-            'Murat Aydın': 'Mid-Level',
-            'Hakan Yılmaz': 'Junior'
-        },
-        'Ankara': {
-            'Kemal Demir': 'Senior',
-            'Selin Kaya': 'Senior',
-            'Burak Öz': 'Mid-Level',
-            'Deniz Yıldırım': 'Junior'
-        },
-        'İzmir': {
-            'Canan Aksoy': 'Senior',
-            'Serkan Yılmaz': 'Mid-Level',
-            'Elif Demir': 'Junior',
-            'Onur Kaya': 'Junior'
-        },
-        'Bursa': {
-            'Levent Aydın': 'Senior',
-            'Gül Şahin': 'Mid-Level',
-            'Emre Yıldız': 'Junior'
-        },
-        'Antalya': {
-            'Özlem Demir': 'Senior',
-            'Tolga Kaya': 'Mid-Level',
-            'Pınar Yılmaz': 'Junior'
-        }
-    }
-    kategoriler = {
-        'Donanım': ['PC Arıza', 'Yazıcı Arıza', 'Network Cihaz'],
-        'Yazılım': ['Windows', 'Office', 'ERP', 'CRM'],
-        'Ağ': ['İnternet', 'VPN', 'Firewall'],
-        'Güvenlik': ['Virüs', 'Şifre Reset', 'Yetkilendirme'],
-        'Veritabanı': ['SQL Server', 'Oracle', 'PostgreSQL']
-    }
-    cozum_detaylar = ['Yerinde', 'Uzaktan', 'Telefonla']
-    kaynak_sistemler = ['Portal', 'Email', 'Telefon']
-
-    # Tarih aralığı (3 ay)
-    baslangic_tarih = datetime(2024, 1, 1)
-    bitis_tarih = datetime(2024, 3, 31)
-
-    # Her gün için veri oluştur
-    current_date = baslangic_tarih
-    ticket_counter = 1
-
-    while current_date <= bitis_tarih:
-        # Her gün için ticket sayısını belirle
-        if current_date.weekday() < 5:  # Hafta içi
-            gun_ticket_sayisi = random.randint(200, 300)
-        else:  # Hafta sonu
-            gun_ticket_sayisi = random.randint(50, 100)
-
-        for _ in range(gun_ticket_sayisi):
-            ticket_id = f'TIC{str(ticket_counter).zfill(6)}'
+        # Tabloyu oluştur
+        cursor.execute("""
+        CREATE TABLE [dbo].[Tickets] (
+            [Ticket_ID] VARCHAR(10),
+            [Bolge] NVARCHAR(50),
+            [Oncelik] NVARCHAR(20),
+            [Kategori] NVARCHAR(20),
+            [Alt_Kategori] NVARCHAR(50),
+            [Teknisyen] NVARCHAR(50),
+            [Teknisyen_Seviye] NVARCHAR(20),
+            [Olusturma_Tarihi] DATETIME,
+            [Atama_Tarihi] DATETIME,
+            [Cozum_Tarihi] DATETIME,
+            [Is_Gununde_mi] BIT,
+            [Mesai_Saatinde_mi] BIT,
+            [Hedef_Atama_Suresi_dk] INT,
+            [Gercek_Atama_Suresi_dk] INT,
+            [Hedef_Cozum_Suresi_dk] INT,
+            [Gercek_Cozum_Suresi_dk] INT,
+            [Atama_SLA_Uyumu] BIT,
+            [Cozum_SLA_Uyumu] BIT,
+            [Musteri_Memnuniyeti] FLOAT,
+            [Cozum_Detay] NVARCHAR(50),
+            [Tekrar_Acilma] BIT,
+            [Onceki_Ticket_ID] VARCHAR(10) NULL,
+            [Kaynak_Sistem] NVARCHAR(50),
+            [Cozum_Aciklamasi] NVARCHAR(MAX),
+            [Problem_Aciklamasi] NVARCHAR(MAX),
+            [Yapilan_Islem] NVARCHAR(MAX),
+            [Kullanilan_Arac] NVARCHAR(MAX),
+            [Root_Cause] NVARCHAR(MAX),
+            PRIMARY KEY ([Ticket_ID])
+        )
+        """)
+        print("Yeni tablo oluşturuldu.")
+        
+        # Veri oluştur ve ekle
+        baslangic_tarih = datetime(2023, 1, 1)
+        bitis_tarih = datetime(2024, 1, 31)
+        
+        TOPLAM_KAYIT = 50000
+        
+        for i in range(1, TOPLAM_KAYIT + 1):
+            ticket_id = f'TIC{i:06d}'
             
-            # Bölge seçimi - ağırlıklı
-            bolge = random.choices(
-                list(bolge_agirliklari.keys()), 
-                weights=list(bolge_agirliklari.values())
-            )[0]
-
-            # Saat belirle
-            if random.random() < 0.8:  # %80 mesai saati
-                saat = random.randint(9, 17)
-                mesai_saatinde = 1
-            else:
-                saat = random.randint(0, 23)
-                mesai_saatinde = 0
-
-            # Tarihler
-            olusturma_tarihi = current_date.replace(hour=saat, minute=random.randint(0, 59))
-            
-            # Öncelik ve hedef süreler
-            oncelik = random.choice(oncelikler)
-            hedef_atama = {'Yüksek': 60, 'Orta': 120, 'Düşük': 240}[oncelik]
-            hedef_cozum = {'Yüksek': 240, 'Orta': 480, 'Düşük': 1440}[oncelik]
-
-            # Gerçek süreler
-            atama_suresi = random.randint(15, 480)
-            cozum_suresi = random.randint(60, 2880)
-            
-            atama_tarihi = olusturma_tarihi + timedelta(minutes=atama_suresi)
-            cozum_tarihi = atama_tarihi + timedelta(minutes=cozum_suresi)
-
-            # Kategori seçimi
+            # Kategori ve alt kategori seç
             kategori = random.choice(list(kategoriler.keys()))
             alt_kategori = random.choice(kategoriler[kategori])
+            
+            # Problem ve çözüm detaylarını seç
+            if alt_kategori in problem_detaylari:
+                problem = random.choice(problem_detaylari[alt_kategori])
+                
+                # Problem tipini belirle
+                if 'yavaş' in problem.lower():
+                    problem_tipi = 'Yavaşlık'
+                elif 'bağlantı' in problem.lower() or 'vpn' in problem.lower():
+                    problem_tipi = 'Bağlantı'
+                elif 'kağıt' in problem.lower():
+                    problem_tipi = 'Kağıt Sıkışması'
+                elif 'excel' in problem.lower():
+                    problem_tipi = 'Excel'
+                elif 'outlook' in problem.lower():
+                    problem_tipi = 'Outlook'
+                elif 'sap' in problem.lower():
+                    problem_tipi = 'SAP'
+                else:
+                    problem_tipi = 'Yavaşlık'  # Varsayılan tip
+                
+                cozum = get_solution_detail(kategori, alt_kategori, problem_tipi)
+            else:
+                problem = "Standart problem"
+                cozum = "Standart prosedür uygulandı"
 
-            # Seçilen bölgenin teknisyenleri arasından seçim yap
-            bolge_teknisyenleri = teknisyenler[bolge]  # Sadece o bölgenin teknisyenlerini al
-            teknisyen = random.choice(list(bolge_teknisyenleri.keys()))
-            teknisyen_seviye = bolge_teknisyenleri[teknisyen]
-
+            # Diğer alanları oluştur
+            bolge = random.choice(['İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Antalya'])
+            oncelik = random.choice(['Düşük', 'Orta', 'Yüksek', 'Kritik'])
+            teknisyen = f'Teknisyen_{random.randint(1,10)}'
+            teknisyen_seviye = random.choice(['Junior', 'Mid-Level', 'Senior'])
+            
+            # Tarihleri oluştur
+            olusturma_tarihi = baslangic_tarih + timedelta(
+                days=random.randint(0, 30),
+                hours=random.randint(0, 23),
+                minutes=random.randint(0, 59)
+            )
+            
+            atama_tarihi = olusturma_tarihi + timedelta(minutes=random.randint(5, 120))
+            cozum_tarihi = atama_tarihi + timedelta(minutes=random.randint(30, 480))
+            
+            # İş günü ve mesai kontrolü
+            is_gununde = 1 if olusturma_tarihi.weekday() < 5 else 0
+            mesai_saatinde = 1 if 9 <= olusturma_tarihi.hour <= 18 else 0
+            
+            # SLA süreleri
+            hedef_atama = 60 if oncelik == 'Kritik' else 120
+            hedef_cozum = 240 if oncelik == 'Kritik' else 480
+            
+            gercek_atama = int((atama_tarihi - olusturma_tarihi).total_seconds() / 60)
+            gercek_cozum = int((cozum_tarihi - atama_tarihi).total_seconds() / 60)
+            
             # SLA uyumları
-            atama_sla = 1 if atama_suresi <= hedef_atama else 0
-            cozum_sla = 1 if cozum_suresi <= hedef_cozum else 0
-
+            atama_sla = 1 if gercek_atama <= hedef_atama else 0
+            cozum_sla = 1 if gercek_cozum <= hedef_cozum else 0
+            
             # Müşteri memnuniyeti
-            musteri_memnuniyeti = random.uniform(0.7, 1.0) if (atama_sla and cozum_sla) else random.uniform(0.3, 0.8)
+            memnuniyet = round(random.uniform(3.0, 5.0), 1)
+            
+            # Yapılan işlem ve kullanılan araçlar
+            yapilan_islem = f"1-Problem analizi yapıldı\n2-{cozum}"
+            kullanilan_arac = random.choice(['Remote Desktop', 'TeamViewer', 'VNC', 'Yerinde Müdahale'])
+            
+            # Root cause
+            root_cause = random.choice([
+                'Kullanıcı Hatası',
+                'Donanım Arızası',
+                'Yazılım Hatası',
+                'Ağ Problemi',
+                'Sistem Güncellemesi'
+            ])
 
-            # Tekrar açılma
-            tekrar_acilma = random.choice([0, 0, 0, 1])  # %25 ihtimal
-            onceki_ticket = f'TIC{str(random.randint(1, ticket_counter-1)).zfill(6)}' if tekrar_acilma and ticket_counter > 1 else None
-
+            # Verileri ekle
             cursor.execute("""
-            INSERT INTO Tickets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO Tickets (
+                Ticket_ID, Bolge, Oncelik, Kategori, Alt_Kategori,
+                Teknisyen, Teknisyen_Seviye, Olusturma_Tarihi,
+                Atama_Tarihi, Cozum_Tarihi, Is_Gununde_mi,
+                Mesai_Saatinde_mi, Hedef_Atama_Suresi_dk,
+                Gercek_Atama_Suresi_dk, Hedef_Cozum_Suresi_dk,
+                Gercek_Cozum_Suresi_dk, Atama_SLA_Uyumu,
+                Cozum_SLA_Uyumu, Musteri_Memnuniyeti,
+                Problem_Aciklamasi, Cozum_Aciklamasi,
+                Yapilan_Islem, Kullanilan_Arac, Root_Cause
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ticket_id, bolge, oncelik, kategori, alt_kategori,
-                teknisyen, teknisyen_seviye, olusturma_tarihi, atama_tarihi, cozum_tarihi,
-                1 if olusturma_tarihi.weekday() < 5 else 0, mesai_saatinde,
-                hedef_atama, atama_suresi, hedef_cozum, cozum_suresi,
-                atama_sla, cozum_sla, musteri_memnuniyeti,
-                random.choice(cozum_detaylar), tekrar_acilma, onceki_ticket,
-                random.choice(kaynak_sistemler)
+                teknisyen, teknisyen_seviye, olusturma_tarihi,
+                atama_tarihi, cozum_tarihi, is_gununde,
+                mesai_saatinde, hedef_atama, gercek_atama,
+                hedef_cozum, gercek_cozum, atama_sla, cozum_sla,
+                memnuniyet, problem, cozum, yapilan_islem,
+                kullanilan_arac, root_cause
             ))
 
-            ticket_counter += 1
+            if i % 1000 == 0:
+                print(f"{i} adet ticket oluşturuldu ({(i/TOPLAM_KAYIT)*100:.1f}%)")
+                conn.commit()
 
-        current_date += timedelta(days=1)
+        conn.commit()
+        print(f"Toplam {TOPLAM_KAYIT} adet ticket başarıyla oluşturuldu.")
 
-    conn.commit()
-    conn.close()
-    print(f"Test verisi başarıyla oluşturuldu! Toplam {ticket_counter-1} kayıt eklendi.")
+    except Exception as e:
+        print("Hata:", str(e))
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == "__main__":
     test_verisi_olustur()

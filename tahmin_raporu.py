@@ -145,7 +145,9 @@ for bolge in df['Bolge'].unique():
                 'Teknisyen': [teknisyen],
                 'Ay': [ay]
             })
-            
+            feature_df = pd.get_dummies(df[['Bolge', 'Teknisyen', 'Ay']])
+            feature_columns = feature_df.columns  # Tüm feature'ların sırası burada saklanıyor
+
             # One-hot encoding
             tahmin_features = pd.get_dummies(tahmin_data[['Bolge', 'Teknisyen', 'Ay']])
             
