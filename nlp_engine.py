@@ -3,476 +3,339 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy import create_engine, text
-import re
-import json
-import os
 import traceback
-
-# Sabit listeler
-LOCATIONS = [
-    '3. kat',
-    '4. kat',
-    '5. kat',
-    'toplantı odası',
-    'ofis',
-    'yemekhane',
-    'lobi',
-    'sistem odası',
-    'arşiv',
-    'uzaktan çalışma'
-]
+from unidecode import unidecode
+import re
 
 class NLPEngine:
     def __init__(self):
         self.engine = None
         self.df = None
         self.vectorizer = None
-        self.model = None
-        self._category_cache = {}
-        self._initialized = False
-        self.min_similarity = 0.3  # Minimum benzerlik eşiği
-        self.location_weight = 0.2  # Konum ağırlığı
+        self.categories = None
+        self.min_similarity = 0.3
         
     def initialize(self):
-        """Initialize the NLP engine if not already initialized"""
-        if self._initialized:
-            return
-            
+        """Sistemi başlat"""
         try:
-            self._setup_components()
-            self._initialized = True
-            
+            self._connect_database()
+            self._load_data()
+            self._setup_categories()
+            self._train_model()
+            print("✅ NLP Engine başarıyla başlatıldı")
         except Exception as e:
-            print(f"❌ Başlatma hatas: {str(e)}")
+            print(f"❌ Başlatma hatası: {str(e)}")
             traceback.print_exc()
             
-    def _setup_components(self):
-        """Set up all required components"""
-        self._initialize_database()
-        self._load_categories()
-        print("📚 Ticket verileri yükleniyor...")
-        self.load_data()
-        
-        if self.df is not None and len(self.df) > 0:
-            print("🤖 Model eğitiliyor...")
-            self.train_model()
-            
-        self._load_synonyms()
-
-    def _initialize_database(self):
-        """Initialize database connection"""
-        self.engine = self._connect_to_database()
-        print("✅ Veritabanı bağlantısı kuruldu")
-
-    def _connect_to_database(self):
-        """Veritabanı bağlantısı oluştur"""
+    def _connect_database(self):
+        """Veritabanı bağlantısı kur"""
         connection_string = "mssql+pyodbc://usesen:usesen@DESKTOP-6QR83E3\\UGURMSSQL/FSM_Tickets?driver=SQL+Server"
-        return create_engine(connection_string)
+        self.engine = create_engine(connection_string)
+        print("✅ Veritaban bağlantısı kuruldu")
         
-    def _initialize_engine_and_data(self):
-        """Initialize engine and load all required data"""
-        self.engine = self._connect_to_database()
+    def _load_data(self):
+        """Ticket verilerini yükle"""
+        query = text("""
+            WITH RankedTickets AS (
+                SELECT 
+                    t.Ticket_ID as ticket_id,
+                    t.Musteri_ID as customer_id,
+                    t.Model as model,
+                    t.Problem_Aciklamasi as problem_description,
+                    t.Cozum_Aciklamasi as solution_description,
+                    t.Kategori as kategori,
+                    t.Alt_Kategori as alt_kategori,
+                    ROW_NUMBER() OVER (PARTITION BY t.Problem_Aciklamasi ORDER BY t.Ticket_ID DESC) as rn
+                FROM Tickets t
+                WHERE t.Problem_Aciklamasi IS NOT NULL 
+                AND t.Cozum_Aciklamasi IS NOT NULL
+                AND t.Cozum_Aciklamasi != 'standart prosedur uygulandi'
+                AND LEN(TRIM(t.Problem_Aciklamasi)) > 10
+                AND LEN(TRIM(t.Cozum_Aciklamasi)) > 10
+            )
+            SELECT 
+                ticket_id,
+                customer_id,
+                model,
+                problem_description,
+                solution_description,
+                kategori,
+                alt_kategori
+            FROM RankedTickets
+            WHERE rn = 1
+            ORDER BY ticket_id DESC
+        """)
         
-        print("Veriler yükleniyor...")
-        self.load_data()
-        
-        print("Kelime kalıpları analiz ediliyor...")
-        self.analyze_common_patterns()
-        
-        print("Model eğitiliyor...")
-        self.train_model()
-        
-    def load_data(self):
-        """Veritabanından verileri yükle"""
-        try:
-            query = text("""
-            SELECT Problem_Aciklamasi, Cozum_Aciklamasi, Teknisyen 
-            FROM Tickets 
-            WHERE Problem_Aciklamasi IS NOT NULL 
-            AND Cozum_Aciklamasi IS NOT NULL
-            """)
-            
-            with self.engine.connect() as conn:
-                self.df = pd.read_sql(query, conn)
-                print(f"✅ {len(self.df)} adet ticket yüklendi")
-                
-                if len(self.df) > 0:
-                    self.df['processed_problem'] = self.df['Problem_Aciklamasi'].apply(
-                        lambda x: self.preprocess_text(x)[0]
-                    )
-            
-        except Exception as e:
-            print(f"❌ Veri yükleme hatası: {str(e)}")
-            traceback.print_exc()
+        with self.engine.connect() as conn:
+            result = conn.execute(query)
+            self.df = pd.DataFrame(result.fetchall())
+            print("\n=== Veri Yükleme Kontrolü ===")
+            print(f"Toplam benzersiz kayıt: {len(self.df)}")
+            print("Örnek problem-çözüm çiftleri:")
+            sample_data = self.df.sample(n=3) if len(self.df) > 3 else self.df
+            for _, row in sample_data.iterrows():
+                print(f"\nProblem: {row['problem_description']}")
+                print(f"Çözüm: {row['solution_description']}")
 
-    def _load_synonyms(self):
-        """Eş anlamlı kelimeleri yükle"""
-        try:
-            query = "SELECT * FROM Kelime_Esanlamlilari"
-            with self.engine.connect() as conn:
-                result = conn.execute(text(query))
-                for row in result:
-                    self._category_cache[row.Kelime.lower()] = {
-                        'kategori': row.Kategori,
-                        'frekans': row.Kullanim_Frekansi,
-                        'esanlamlilar': row.Es_Anlamli_Kelimeler.split(',') if row.Es_Anlamli_Kelimeler else []
-                    }
-            print("✅ Eş anlamlı kelimeler yüklendi")
-        except Exception as e:
-            print(f"❌ Eş anlamlı kelime yükleme hatası: {str(e)}")
-
-    def preprocess_text(self, text):
-        """Metin ön işleme geliştirmeleri"""
-        if not text:
-            return "", None
-            
-        text = text.lower()
-        
-        # Kategori eşleştirme puanlama sistemi
-        category_scores = {
-            'donanim': 0,
-            'yazilim': 0,
-            'ag': 0
-        }
-        
-        # Her kategori için puan hesapla
-        for category, info in self.categories.items():
-            score = 0
-            matches = [keyword for keyword in info['keywords'] if keyword in text]
-            
-            # Özel ağırlıklandırma kuralları
-            for match in matches:
-                base_score = 1
-                # Yazılım uygulamaları için özel kural
-                if category == 'yazilim' and match in ['outlook', 'teams', 'sap', 'excel', 'word']:
-                    base_score = 2
-                # Ağ terimleri için özel kural
-                elif category == 'ag' and match in ['vpn', 'internet', 'bağlantı']:
-                    base_score = 2
-                    
-                score += base_score
-                
-            category_scores[category] = score
-        
-        # En yüksek puanlı kategoriyi seç
-        best_category = max(category_scores.items(), key=lambda x: x[1])
-        selected_category = best_category[0] if best_category[1] > 0 else None
-                
-        return text, selected_category
-
-    def calculate_similarity(self, text1, text2, category):
-        """Geliştirilmiş benzerlik hesaplama"""
-        base_similarity = self.vectorizer.transform([text1, text2])
-        similarity = cosine_similarity(base_similarity)[0][1]
-        
-        # Kategori bazlı ağırlıklandırma
-        weights = {
+    def _setup_categories(self):
+        """Kategorileri ayarla"""
+        self.categories = {
+            'donanim': {
+                'keywords': {'bilgisayar', 'ekran', 'yazıcı', 'fare', 'klavye', 'monitör', 'printer'}
+            },
             'yazilim': {
-                'sap': ['sap', 'gui', 'oturum', 'parametre'],
-                'outlook': ['outlook', 'exchange', 'email', 'posta'],
-                'teams': ['teams', 'microsoft', 'toplantı']
+                'keywords': {'windows', 'office', 'excel', 'word', 'outlook', 'uygulama'}
             },
             'ag': {
-                'vpn': ['vpn', 'bağlantı', 'kopma', 'tunnel'],
-                'internet': ['internet', 'yavaş', 'sayfa', 'dns'],
-                'network': ['ağ', 'firewall', 'proxy', 'port']
+                'keywords': {'internet', 'wifi', 'bağlantı', 'ağ', 'network', 'vpn'}
             }
         }
         
-        if category in weights:
-            for subcategory, keywords in weights[category].items():
-                if any(keyword in text1.lower() for keyword in keywords):
-                    similarity += 0.1 * len([k for k in keywords if k in text2.lower()])  # Her eşleşen kelime için %10 bonus
-        
-        # Benzerlik skorunu normalize et
-        return min(max(similarity, 0.3), 0.95)  # Minimum %30, Maximum %95
-
-    def train_model(self):
+    def _train_model(self):
         """TF-IDF modelini eğit"""
-        try:
-            # Boş metin kontrolü
-            valid_docs = self.df['processed_problem'].fillna('').astype(str)
-            valid_docs = valid_docs[valid_docs.str.strip() != '']
-            
-            if len(valid_docs) == 0:
-                print("UYARI: İşlenecek metin bulunamadı!")
-                return
-                
-            # TF-IDF vektörizasyonu
-            self.vectorizer = TfidfVectorizer(
-                ngram_range=(1, 2),
-                min_df=1,
-                max_df=0.99,
-                strip_accents='unicode'
-            )
-            
-            # Modeli eğit
-            self.model = self.vectorizer.fit_transform(valid_docs)
-            
-        except Exception as e:
-            print(f"Model eğitme hatası: {str(e)}")
-            
-    def analyze_common_patterns(self):
-        """Sık kullanılan kelime kalıplarını analiz et"""
-        try:
-            # processed_problem artık bir tuple döndürdüğü için ilk eleman alalım
-            all_problems = ' '.join([prob[0] if isinstance(prob, tuple) else prob 
-                                   for prob in self.df['processed_problem'].fillna('')])
-            
-            words = all_problems.split()
-            word_freq = pd.Series(words).value_counts()
-            
-            # En sık kullanılan kelimeleri kaydet
-            self.common_words = word_freq[word_freq > len(self.df) * 0.01]
-            
-            print(f"✅ {len(self.common_words)} adet sık kullanılan kelime kalıbı bulundu")
-            
-        except Exception as e:
-            print(f"Kalıp analizi hatası: {str(e)}")
-            
-    def _validate_dataframe(self):
-        """Validate if dataframe exists and has data"""
-        return self.df is not None and len(self.df) > 0
+        self.vectorizer = TfidfVectorizer()
+        self.vectorizer.fit(self.df['problem_description'])
+        print("✅ Model eğitimi tamamlandı")
+        
+    def _filter_by_model(self, model):
+        """Modele göre ticketları filtrele"""
+        filtered_df = self.df[self.df['model'] == model].copy()
+        return None if filtered_df.empty else filtered_df
 
-    def get_similar_tickets(self, problem):
-        """Benzer ticketları bul"""
-        processed_problem = self.preprocess_text(problem)
-        category = self.categorize_problem(processed_problem)
-        
-        similar_tickets = []
-        seen_solutions = set()
-        
-        for idx, row in self.df.iterrows():
-            ticket_problem = row['Problem_Aciklamasi']
-            solution = row['Cozum_Aciklamasi']
-            
-            # Çok kısa veya genel çözümleri atla
-            if len(solution) < 15 or 'standart' in solution.lower():
-                continue
-                
-            # Çözüm benzersizliğini kontrol et
-            solution_key = solution.lower()[:50]
-            if solution_key in seen_solutions:
-                continue
-                
-            similarity = self.calculate_similarity(processed_problem, ticket_problem, category)
-            
-            if similarity >= 0.3:  # Minimum %30 benzerlik
-                similar_tickets.append({
-                    'Cozum_Aciklamasi': solution,
-                    'Benzerlik_Skoru': round(similarity * 100, 2)
-                })
-                seen_solutions.add(solution_key)
-                
-            if len(similar_tickets) >= 4:
-                break
-        
-        # Sonuçları benzerlik skoruna göre sırala
-        return sorted(similar_tickets, key=lambda x: x['Benzerlik_Skoru'], reverse=True)
-                
-    def learn_synonyms(self, text1, text2, category=None):
-        """Yeni eş anlamlı kelime çifti öğren"""
-        try:
-            # Metinleri ön işle
-            text1 = self.preprocess_text(text1)
-            text2 = self.preprocess_text(text2)
-            
-            # Veritabanına kaydet
-            query = """
-            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Synonyms')
-            CREATE TABLE Synonyms (
-                ID INT IDENTITY(1,1) PRIMARY KEY,
-                Text1 NVARCHAR(100),
-                Text2 NVARCHAR(100),
-                Category NVARCHAR(50),
-                CreatedDate DATETIME DEFAULT GETDATE()
-            );
+    def _get_filtered_tickets(self, model):
+        """Get filtered tickets by model, returns empty list if no matches"""
+        filtered_df = self._filter_by_model(model)
+        return [] if filtered_df is None else filtered_df
 
-            INSERT INTO Synonyms (Text1, Text2, Category)
-            VALUES (:text1, :text2, :category)
-            """
+    def _is_valid_dataframe(self, df):
+        """Check if input is a valid DataFrame"""
+        return isinstance(df, pd.DataFrame)
+
+    def _validate_tickets(self, model):
+        """Validate and return filtered tickets for given model"""
+        filtered_df = self._get_filtered_tickets(model)
+        return filtered_df if self._is_valid_dataframe(filtered_df) else None
+
+    def _calculate_similarities(self, problem, filtered_df):
+        """Calculate similarity scores between problem and filtered tickets"""
+        problem_vector = self.vectorizer.transform([problem])
+        all_vectors = self.vectorizer.transform(filtered_df['problem_description'])
+        return cosine_similarity(problem_vector, all_vectors)[0]
+
+    def _get_validated_tickets(self, model):
+        """Model bazlı filtreleme yaparken daha esnek davran"""
+        if not isinstance(model, str):
+            return None
+
+        # Model kategorilerini belirle
+        software_models = ['Software', 'SAP', 'Network']
+        hardware_models = ['HP', 'Xerox', 'Ubiquiti', 'Device']
+
+        is_software = any(keyword.lower() in model.lower() for keyword in software_models)
+        is_hardware = any(keyword.lower() in model.lower() for keyword in hardware_models)
+
+        # Filtrelemeyi kategoriye göre yap
+        if is_software:
+            mask = self.df['model'].str.contains('|'.join(software_models), case=False, na=False)
+        elif is_hardware:
+            mask = self.df['model'].str.contains('|'.join(hardware_models), case=False, na=False)
+        else:
+            mask = self.df['model'].str.contains(model, case=False, na=False)
+
+        return self.df[mask]
+
+    def _calculate_relevance_score(self, problem_type, solution_type):
+        """Çözüm ile problem tipinin uyumluluğunu kontrol et"""
+        problem_keywords = {
+            'SAP': ['sap', 'transaction', 'module'],
+            'VPN': ['vpn', 'bağlantı', 'connection'],
+            'NETWORK': ['internet', 'ağ', 'network', 'dns'],
+            'HARDWARE': ['fan', 'işlemci', 'cpu', 'ram', 'disk']
+        }
+        
+        for _, keywords in problem_keywords.items():
+            if any(keyword in problem_type.lower() for keyword in keywords):
+                if any(keyword in solution_type.lower() for keyword in keywords):
+                    return True
+        return False
+
+    def _normalize_text(self, text):
+        """Metin normalizasyonu geliştirme"""
+        text = str(text).lower().strip()
+        
+        # Eş anlamlı kelimeleri genişlet
+        synonyms = {
+            'outlook': ['mail', 'e-posta', 'eposta', 'email'],
+            'tarayici': ['scanner', 'tarama', 'scan'],
+            'yazici': ['printer', 'baski', 'çıktı', 'cikti'],
+            'email': ['mail', 'e-posta', 'outlook'],
+            'vpn': ['uzak bağlantı', 'remote'],
+            'sap': ['erp', 'sistem']
+        }
+        
+        # Eş anlamlıları ekle
+        normalized = text
+        for main_word, synonym_list in synonyms.items():
+            if any(syn in text for syn in synonym_list):
+                normalized = f"{normalized} {main_word}"
+        
+        # Türkçe karakterleri düzelt
+        normalized = unidecode(normalized)
+        
+        # Gereksiz karakterleri kaldır
+        normalized = re.sub(r'[^\w\s]', ' ', normalized)
+        
+        return normalized.strip()
+
+    def _get_printer_solution(self, problem, model):
+        """Yazıcı problemleri için özel çözümler"""
+        problem = problem.lower()
+        model = model.lower()
+        
+        printer_solutions = {
+            'offline': [
+                'Yazıcı ağ bağlantısı kontrol edildi',
+                'IP adresi yeniden yapılandırıldı',
+                'Yazıcı sürücüleri güncellendi'
+            ],
+            'renkli': [
+                'Toner seviyeleri kontrol edildi',
+                'Renkli yazdırma ayarları düzeltildi',
+                'Renk kalibrasyonu yapıldı'
+            ],
+            'sikisma': [
+                'Kağıt yolu temizlendi',
+                'Kağıt besleme ünitesi kontrol edildi',
+                'Yazıcı bakımı yapıldı'
+            ],
+            'cikti': [
+                'Yazıcı sürücüleri güncellendi',
+                'Yazdırma kuyruğu temizlendi',
+                'Yazıcı ayarları sıfırlandı'
+            ]
+        }
+        
+        # Problem tipini belirle
+        problem_type = None
+        if any(word in problem for word in ['offline', 'çevrimdışı', 'bağlantı']):
+            problem_type = 'offline'
+        elif any(word in problem for word in ['renkli', 'renk', 'color']):
+            problem_type = 'renkli'
+        elif any(word in problem for word in ['sıkış', 'sikis', 'jam']):
+            problem_type = 'sikisma'
+        elif any(word in problem for word in ['çıktı', 'cikti', 'yazdır']):
+            problem_type = 'cikti'
             
-            with self.engine.connect() as conn:
-                conn.execute(text(query), 
-                           {"text1": text1, "text2": text2, "category": category or 'Genel'})
-                
-            print(f"Yeni eş anlamlı kelimeler öğrenildi: {text1} = {text2}")
+        if problem_type and problem_type in printer_solutions:
+            return printer_solutions[problem_type]
+        return None
+
+    def _get_model_similarity(self, model1, model2):
+        """İki modelin benzerliğini kontrol et"""
+        if not model1 or not model2:
+            return 0.0
+            
+        model1 = str(model1).lower().strip()
+        model2 = str(model2).lower().strip()
+        
+        # Tam eşleşme
+        if model1 == model2:
+            return 1.0
+            
+        # Metin benzerliği hesapla
+        vectorizer = TfidfVectorizer(
+            analyzer='char_wb',
+            ngram_range=(2, 3)
+        )
+        
+        try:
+            vectors = vectorizer.fit_transform([model1, model2])
+            similarity = cosine_similarity(vectors)[0][1]
+            return float(similarity)
+        except:
+            return 0.0
+
+    def get_similar_tickets(self, problem, model, kategori, alt_kategori):
+        """Benzer ticketları getir"""
+        try:
+            # Kategori ve alt kategoriye göre filtrele
+            filtered_df = self.df[
+                (self.df['kategori'] == kategori) & 
+                (self.df['alt_kategori'] == alt_kategori)
+            ]
+            
+            # Yeterli sonuç yoksa sadece kategori ile filtrele
+            if len(filtered_df) < 5:
+                filtered_df = self.df[self.df['kategori'] == kategori]
+            
+            # Benzerlik hesapla ve sonuçları döndür
+            return self._find_similar_tickets(problem, filtered_df)
             
         except Exception as e:
-            print(f"Eş anlamlı kelime öğrenme hatası: {str(e)}")
+            print(f"Hata: {str(e)}")
+            return []
+
+    def _find_similar_tickets(self, problem, df):
+        """Benzer ticketları bul ve formatla"""
+        try:
+            results = []
+            normalized_problem = self._normalize_text(problem)
             
+            for _, row in df.iterrows():
+                try:
+                    other_problem = self._normalize_text(row['problem_description'])
+                    similarity_score = self._calculate_similarity(normalized_problem, other_problem)
+                    
+                    if similarity_score > 0.1:  # Minimum benzerlik eşiği
+                        results.append({
+                            'similarity_score': round(float(similarity_score), 2),
+                            'problem_description': str(row['problem_description']),
+                            'solution_description': str(row['solution_description']),
+                            'relevance': self._get_relevance_level(similarity_score)
+                        })
+                except Exception as e:
+                    print(f"Satır işleme hatası: {str(e)}")
+                    continue
+            
+            # Benzerlik skoruna göre sırala
+            results.sort(key=lambda x: x['similarity_score'], reverse=True)
+            return results[:5]  # En benzer 5 sonucu döndür
+            
+        except Exception as e:
+            print(f"Benzerlik hesaplama hatası: {str(e)}")
+            return []
+
+    def _get_relevance_level(self, score):
+        """Benzerlik skoruna göre uyumluluk seviyesi belirle"""
+        if score >= 0.7:
+            return "Yüksek"
+        elif score >= 0.3:
+            return "Orta"
+        else:
+            return "Düşük"
+
     def get_total_tickets(self):
-        """Veritabanındaki toplam ticket sayısını döndür"""
+        """Toplam ticket sayısını getir"""
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT COUNT(*) FROM Tickets"))
                 return result.scalar()
         except Exception as e:
-            print(f"Veritaban hatas: {str(e)}")
+            print(f"❌ Veritabanı hatası: {str(e)}")
             return 0
-            
-    def _add_sample_ticket(self, device, issue, symptom):
-        """Örnek ticket ekle"""
-        try:
-            query = """
-            INSERT INTO Tickets (
-                Problem_Aciklamasi, 
-                Cozum_Aciklamasi,
-                Teknisyen,
-                Olusturma_Tarihi,
-                Bolge,
-                Oncelik
-            ) VALUES (
-                ?, ?, ?, GETDATE(), 'Merkez', 'Orta'
-            )
-            """
-            
-            problem = f"{device} {issue} - {symptom}"
-            solution = f"{device} için genel kontroller yapıldı ve sorun giderildi"
-            
-            with self.engine.connect() as conn:
-                conn.execute(text(query), [problem, solution, "Sistem"])
-                conn.commit()
-                
-            print(f"✅ Örnek ticket eklendi: {problem}")
-            
-        except Exception as e:
-            print(f"❌ Örnek ticket ekleme hatası: {str(e)}")
-            
-    def update_synonyms(self, problem, solution):
-        """Eş anlamlı kelimeleri güncelle"""
-        try:
-            # Mevcut kelime ve frekansları al
-            query = """
-            SELECT Kelime, Kullanim_Frekansi 
-            FROM Kelime_Esanlamlilari 
-            WHERE Kelime = ? OR Kelime IN (
-                SELECT value FROM STRING_SPLIT(?, ',')
-            )
-            """
-            
-            # Frekansı artr veya yeni kelime ekle
-            upsert_query = """
-            MERGE Kelime_Esanlamlilari AS target
-            USING (SELECT @Kelime as Kelime) AS source
-            ON target.Kelime = source.Kelime
-            WHEN MATCHED THEN
-                UPDATE SET 
-                    Kullanim_Frekansi = Kullanim_Frekansi + 1,
-                    Son_Kullanim = GETDATE()
-            WHEN NOT MATCHED THEN
-                INSERT (Kelime, Es_Anlamli_Kelimeler, Kategori, Kullanim_Frekansi, Son_Kullanim)
-                VALUES (@Kelime, @Esanlamlilar, @Kategori, 1, GETDATE());
-            """
-            
-            with self.engine.connect() as conn:
-                # Her kelime için güncelleme yap
-                for word in set(problem.lower().split() + solution.lower().split()):
-                    conn.execute(text(upsert_query), {
-                        'Kelime': word,
-                        'Esanlamlilar': '',  # İlk başta boş
-                        'Kategori': 'Belirlenmedi'  # İlk kategori
-                    })
-                    
-            print("✅ Eş anlamlı kelimeler güncellendi")
-            
-        except Exception as e:
-            print(f"❌ Eş anlamlı kelime güncelleme hatası: {str(e)}")
-            
-    def _load_categories(self):
-        """Kategorileri yükle ve anahtar kelimeleri güncelle"""
-        try:
-            # Temel kategoriler ve anahtar kelimeler
-            self.categories = {
-                'donanim': {
-                    'keywords': {
-                        'yazici', 'printer', 'bilgisayar', 'pc', 'laptop', 
-                        'ekran', 'monitor', 'fan', 'kağıt', 'çıktı',
-                        'tambur', 'toner', 'bellek', 'ram', 'işlemci',
-                        'fare', 'mouse', 'klavye', 'keyboard', 'donanım'
-                    },
-                    'solutions': set()
-                },
-                'yazilim': {
-                    'keywords': {
-                        'sap', 'outlook', 'word', 'excel', 'teams',
-                        'windows', 'office', 'uygulama', 'program', 'yazılım',
-                        'gui', 'email', 'posta', 'dosya', 'profil',
-                        'login', 'giriş', 'şifre', 'password', 'hesap'
-                    },
-                    'solutions': set()
-                },
-                'ag': {
-                    'keywords': {
-                        'vpn', 'internet', 'ağ', 'network', 'bağlantı',
-                        'wifi', 'kablosuz', 'ethernet', 'ip', 'dns',
-                        'timeout', 'kopma', 'yavas', 'ping', 'firewall',
-                        'erişim', 'access', 'proxy', 'uzak', 'remote'
-                    },
-                    'solutions': set()
-                }
-            }
-            
-            # Veritabanından çözümleri yükle
-            with self.engine.connect() as conn:
-                for kategori in self.categories:
-                    query = text("""
-                        SELECT Problem_Aciklamasi, Cozum_Aciklamasi 
-                        FROM Tickets 
-                        WHERE Kategori = :kategori
-                    """)
-                    
-                    # Her sorgu için yeni bir transaction kullan
-                    with conn.begin():
-                        result = conn.execute(query, {'kategori': kategori})
-                        solutions = [row.Cozum_Aciklamasi for row in result]
-                        self.categories[kategori]['solutions'].update(solutions)
-                        
-                print(f"✅ {len(self.categories)} kategori yüklendi")
-                
-        except Exception as e:
-            print(f"❌ Kategori yükleme hatası: {str(e)}")
-            traceback.print_exc()
-            
-    def _initialize_test_categories(self):
-        """Test için seed kategori verisi"""
-        self.categories = {
-            'donanim': {
-                'keywords': [
-                    'yazici', 'printer', 'bilgisayar', 'pc', 'laptop', 
-                    'ekran', 'monitor', 'fan', 'kağıt', 'çıktı',
-                    'tambur', 'toner', 'bellek', 'ram', 'işlemci'
-                ],
-                'solutions': set()  # Çözümler veritabanından gelecek
-            },
-            'yazilim': {
-                'keywords': [
-                    'sap', 'outlook', 'word', 'excel', 'teams',
-                    'windows', 'office', 'uygulama', 'program', 'yazılım',
-                    'gui', 'email', 'posta', 'dosya', 'profil'
-                ],
-                'solutions': set()
-            },
-            'ag': {
-                'keywords': [
-                    'vpn', 'internet', 'ağ', 'network', 'bağlantı',
-                    'wifi', 'kablosuz', 'ethernet', 'ip', 'dns',
-                    'timeout', 'kopma', 'yavas', 'ping', 'firewall'
-                ],
-                'solutions': set()
-            }
-        }
 
-    def debug_category_matching(self, test_problem):
-        """Kategori eşleştirme debug fonksiyonu"""
-        print(f"\nTest Problemi: {test_problem}")
-        
-        text, category = self.preprocess_text(test_problem)
-        print(f"İşlenmiş Metin: {text}")
-        print(f"Tespit Edilen Kategori: {category}")
-        
-        # Eşleşen kelimeleri göster
-        for cat, info in self.categories.items():
-            if matches := [kw for kw in info['keywords'] if kw in text]:
-                print(f"{cat.upper()} kategorisinde eşleşen kelimeler: {matches}")
+    def _calculate_similarity(self, text1, text2):
+        """İki metin arasındaki benzerliği hesapla"""
+        try:
+            # Metinleri vektörlere dönüştür
+            vector1 = self.vectorizer.transform([text1])
+            vector2 = self.vectorizer.transform([text2])
+            
+            # Kosinüs benzerliğini hesapla
+            similarity = cosine_similarity(vector1, vector2)[0][0]
+            return float(similarity)
+            
+        except Exception as e:
+            print(f"Benzerlik hesaplama hatası: {str(e)}")
+            return 0.0
             

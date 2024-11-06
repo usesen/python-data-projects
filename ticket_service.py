@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from nlp_engine import NLPEngine
 import traceback
 from werkzeug.serving import run_simple
+from colorama import Fore, Style
+import json
 
 app = Flask(__name__)
 
@@ -13,36 +15,42 @@ nlp.initialize()  # Sadece ilk çağrıda başlatılacak
 def health_check():
     return jsonify({'status': 'ok', 'message': 'Service is running'})
 
+def get_similar_tickets(problem, model, kategori, alt_kategori):
+    """Benzer ticketları getir"""
+    try:
+        # NLP motoruna gönder
+        similar_tickets = nlp.get_similar_tickets(
+            problem=problem,
+            model=model,
+            kategori=kategori,
+            alt_kategori=alt_kategori
+        )
+        return similar_tickets
+    except Exception as e:
+        print(f"Hata: {str(e)}")
+        return []
+
 @app.route('/api/ticket-details', methods=['POST'])
 def get_ticket_details():
     try:
         data = request.get_json()
-        problem = data.get('problem', '')
+        problem = data.get('problem')
+        model = data.get('model')
+        kategori = data.get('kategori')
+        alt_kategori = data.get('alt_kategori')
         
-        if not problem:
-            return jsonify({'error': 'Problem açıklaması boş olamaz'}), 400
-            
-        print(f"\n🔍 Aranan problem: {problem}")
+        similar_tickets = get_similar_tickets(
+            problem=problem,
+            model=model,
+            kategori=kategori,
+            alt_kategori=alt_kategori
+        )
         
-        # NLP engine'den benzer ticketları al
-        solutions = nlp.get_similar_tickets(problem)
-        
-        print(f"📊 Veritabanındaki toplam ticket sayısı: {nlp.get_total_tickets()}")
-        print(f"🎯 Bulunan benzer çözüm sayısı: {len(solutions)}")
-        
-        if solutions:
-            print("✅ Bulunan çözümler:")
-            for s in solutions:
-                print(f"- {s['Cozum_Aciklamasi'][:100]}...")
-        else:
-            print("⚠️ Benzer çözüm bulunamadı")
-        
-        return jsonify({'solutions': solutions})
+        return jsonify(similar_tickets)
         
     except Exception as e:
-        print(f"❌ API hatası: {str(e)}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        print(f"Hata: {str(e)}")
+        return jsonify([])
 
 @app.route('/api/learn', methods=['POST'])
 def learn():
@@ -51,8 +59,10 @@ def learn():
         problem = data.get('problem')
         solution = data.get('solution')
         ticket_details = data.get('ticket_details')
+        model = data.get('model')
+        musteri_id = data.get('musteri_id')
         
-        if not all([problem, solution, ticket_details]):
+        if not all([problem, solution, ticket_details, model, musteri_id]):
             return jsonify({'error': 'Eksik veri'}), 400
             
         # Burada NLP öğrenme işlemleri yapılabilir

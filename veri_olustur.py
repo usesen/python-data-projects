@@ -224,173 +224,216 @@ def get_solution_detail(kategori, alt_kategori, problem_tipi):
     except KeyError:
         return "Standart prosedür uygulandı"
 
+def drop_existing_table(cursor):
+    cursor.execute("""
+    IF OBJECT_ID('dbo.Tickets', 'U') IS NOT NULL 
+        DROP TABLE dbo.Tickets
+    """)
+
+def create_tickets_table(cursor):
+    cursor.execute("""
+    CREATE TABLE [dbo].[Tickets] (
+        [Ticket_ID] VARCHAR(10),
+        [Bolge] NVARCHAR(50),
+        [Oncelik] NVARCHAR(20),
+        [Kategori] NVARCHAR(20),
+        [Alt_Kategori] NVARCHAR(50),
+        [Teknisyen] NVARCHAR(50),
+        [Teknisyen_Seviye] NVARCHAR(20),
+        [Olusturma_Tarihi] DATETIME,
+        [Atama_Tarihi] DATETIME,
+        [Cozum_Tarihi] DATETIME,
+        [Is_Gununde_mi] BIT,
+        [Mesai_Saatinde_mi] BIT,
+        [Hedef_Atama_Suresi_dk] INT,
+        [Gercek_Atama_Suresi_dk] INT,
+        [Hedef_Cozum_Suresi_dk] INT,
+        [Gercek_Cozum_Suresi_dk] INT,
+        [Atama_SLA_Uyumu] BIT,
+        [Cozum_SLA_Uyumu] BIT,
+        [Musteri_Memnuniyeti] FLOAT,
+        [Cozum_Detay] NVARCHAR(50),
+        [Tekrar_Acilma] BIT,
+        [Onceki_Ticket_ID] VARCHAR(10) NULL,
+        [Kaynak_Sistem] NVARCHAR(50),
+        [Cozum_Aciklamasi] NVARCHAR(MAX),
+        [Problem_Aciklamasi] NVARCHAR(MAX),
+        [Yapilan_Islem] NVARCHAR(MAX),
+        [Kullanilan_Arac] NVARCHAR(MAX),
+        [Root_Cause] NVARCHAR(MAX),
+        PRIMARY KEY ([Ticket_ID]),
+        [Musteri_ID] INT,
+        [Model] NVARCHAR(50)
+    )
+    """)
+
+def initialize_database(cursor, conn):
+    drop_existing_table(cursor)
+    conn.commit()
+    print("Eski tablo silindi.")
+    
+    create_tickets_table(cursor)
+    print("Yeni tablo oluşturuldu.")
+
+# Müşteri ID'leri için basit bir liste
+musteri_idleri = list(range(1001, 1010))  # 500 farklı müşteri
+
+# Kategori bazlı modeller
+model_listesi = {
+    'PC Arıza': [
+        'Dell Latitude 5520', 'HP EliteBook 840', 'Lenovo ThinkPad T14', 
+        'Dell Precision 5560', 'HP ProBook 450', 'Asus ExpertBook B9'
+    ],
+    'Yazıcı Arıza': [
+        'HP LaserJet Pro M404', 'Canon iR2625i', 'Xerox WorkCentre 6515',
+        'Brother MFC-L8900CDW', 'Epson WorkForce Pro', 'Lexmark MC3326i'
+    ],
+    'Ağ Donanımı': [
+        'Cisco Catalyst 2960', 'HP Aruba 2530', 'Juniper EX2300',
+        'Dell PowerSwitch N1524', 'TP-Link TL-SG3428', 'Ubiquiti UniFi Switch'
+    ]
+}
+
+def generate_ticket_data(baslangic_tarih, bitis_tarih, TOPLAM_KAYIT, cursor, conn):
+    for i in range(1, TOPLAM_KAYIT + 1):
+        ticket_id = f'TIC{i:06d}'
+        
+        # Kategori ve alt kategori seç
+        kategori = random.choice(list(kategoriler.keys()))
+        alt_kategori = random.choice(kategoriler[kategori])
+        
+        # Problem ve çözüm detaylarını seç
+        if alt_kategori in problem_detaylari:
+            problem = random.choice(problem_detaylari[alt_kategori])
+            
+            # Problem tipini belirle
+            if 'yavaş' in problem.lower():
+                problem_tipi = 'Yavaşlık'
+            elif 'bağlantı' in problem.lower() or 'vpn' in problem.lower():
+                problem_tipi = 'Bağlantı'
+            elif 'kağıt' in problem.lower():
+                problem_tipi = 'Kağıt Sıkışması'
+            elif 'excel' in problem.lower():
+                problem_tipi = 'Excel'
+            elif 'outlook' in problem.lower():
+                problem_tipi = 'Outlook'
+            elif 'sap' in problem.lower():
+                problem_tipi = 'SAP'
+            else:
+                problem_tipi = 'Yavaşlık'  # Varsayılan tip
+            
+            cozum = get_solution_detail(kategori, alt_kategori, problem_tipi)
+        else:
+            problem = "Standart problem"
+            cozum = "Standart prosedür uygulandı"
+
+        # Diğer alanları oluştur
+        bolge = random.choice(['İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Antalya'])
+        oncelik = random.choice(['Düşük', 'Orta', 'Yüksek', 'Kritik'])
+        teknisyen = f'Teknisyen_{random.randint(1,10)}'
+        teknisyen_seviye = random.choice(['Junior', 'Mid-Level', 'Senior'])
+        
+        # Tarihleri oluştur
+        olusturma_tarihi = baslangic_tarih + timedelta(
+            days=random.randint(0, 30),
+            hours=random.randint(0, 23),
+            minutes=random.randint(0, 59)
+        )
+        
+        atama_tarihi = olusturma_tarihi + timedelta(minutes=random.randint(5, 120))
+        cozum_tarihi = atama_tarihi + timedelta(minutes=random.randint(30, 480))
+        
+        # İş günü ve mesai kontrolü
+        is_gununde = 1 if olusturma_tarihi.weekday() < 5 else 0
+        mesai_saatinde = 1 if 9 <= olusturma_tarihi.hour <= 18 else 0
+        
+        # SLA süreleri
+        hedef_atama = 60 if oncelik == 'Kritik' else 120
+        hedef_cozum = 240 if oncelik == 'Kritik' else 480
+        
+        gercek_atama = int((atama_tarihi - olusturma_tarihi).total_seconds() / 60)
+        gercek_cozum = int((cozum_tarihi - atama_tarihi).total_seconds() / 60)
+        
+        # SLA uyumları
+        atama_sla = 1 if gercek_atama <= hedef_atama else 0
+        cozum_sla = 1 if gercek_cozum <= hedef_cozum else 0
+        
+        # Müşteri memnuniyeti
+        memnuniyet = round(random.uniform(3.0, 5.0), 1)
+        
+        # Yapılan işlem ve kullanılan araçlar
+        yapilan_islem = f"1-Problem analizi yapıldı\n2-{cozum}"
+        kullanilan_arac = random.choice(['Remote Desktop', 'TeamViewer', 'VNC', 'Yerinde Müdahale'])
+        
+        # Root cause
+        root_cause = random.choice([
+            'Kullanıcı Hatası',
+            'Donanım Arızası',
+            'Yazılım Hatası',
+            'Ağ Problemi',
+            'Sistem Güncellemesi'
+        ])
+
+        # Müşteri ID'si ata
+        musteri_id = random.choice(musteri_idleri)
+        
+        # Alt kategoriye göre model seç
+        model = ''  # Boş string ile başlat
+        if alt_kategori in model_listesi:
+            model = random.choice(model_listesi[alt_kategori])
+        elif kategori == 'Yazılım':
+            model = f'Software v{random.randint(1, 5)}.{random.randint(0, 9)}'
+        elif kategori == 'Ağ':
+            model = f'Network Device v{random.randint(1, 3)}'
+
+        # Verileri ekle
+        cursor.execute("""
+        INSERT INTO Tickets (
+            Ticket_ID, Bolge, Oncelik, Kategori, Alt_Kategori,
+            Teknisyen, Teknisyen_Seviye, Olusturma_Tarihi,
+            Atama_Tarihi, Cozum_Tarihi, Is_Gununde_mi,
+            Mesai_Saatinde_mi, Hedef_Atama_Suresi_dk,
+            Gercek_Atama_Suresi_dk, Hedef_Cozum_Suresi_dk,
+            Gercek_Cozum_Suresi_dk, Atama_SLA_Uyumu,
+            Cozum_SLA_Uyumu, Musteri_Memnuniyeti,
+            Problem_Aciklamasi, Cozum_Aciklamasi,
+            Yapilan_Islem, Kullanilan_Arac, Root_Cause,
+            Musteri_ID, Model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            ticket_id, bolge, oncelik, kategori, alt_kategori,
+            teknisyen, teknisyen_seviye, olusturma_tarihi,
+            atama_tarihi, cozum_tarihi, is_gununde,
+            mesai_saatinde, hedef_atama, gercek_atama,
+            hedef_cozum, gercek_cozum, atama_sla, cozum_sla,
+            memnuniyet, problem, cozum, yapilan_islem,
+            kullanilan_arac, root_cause, musteri_id, model
+        ))
+
+        if i % 1000 == 0:
+            print(f"{i} adet ticket oluşturuldu ({(i/TOPLAM_KAYIT)*100:.1f}%)")
+            conn.commit()
+    
+    conn.commit()
+
+def initialize_test_data():
+    baslangic_tarih = datetime(2023, 1, 1)
+    bitis_tarih = datetime(2024, 1, 31)
+    TOPLAM_KAYIT = 500000
+    return baslangic_tarih, bitis_tarih, TOPLAM_KAYIT
+
 def test_verisi_olustur():
-    # SQL Server bağlantısı
     conn = pyodbc.connect('DRIVER={SQL Server};SERVER=DESKTOP-6QR83E3\\UGURMSSQL;DATABASE=FSM_Tickets;UID=usesen;PWD=usesen')
     cursor = conn.cursor()
 
     try:
-        # Önce tabloyu kontrol et ve varsa sil
-        cursor.execute("""
-        IF OBJECT_ID('dbo.Tickets', 'U') IS NOT NULL 
-            DROP TABLE dbo.Tickets
-        """)
-        conn.commit()
-        print("Eski tablo silindi.")
-
-        # Tabloyu oluştur
-        cursor.execute("""
-        CREATE TABLE [dbo].[Tickets] (
-            [Ticket_ID] VARCHAR(10),
-            [Bolge] NVARCHAR(50),
-            [Oncelik] NVARCHAR(20),
-            [Kategori] NVARCHAR(20),
-            [Alt_Kategori] NVARCHAR(50),
-            [Teknisyen] NVARCHAR(50),
-            [Teknisyen_Seviye] NVARCHAR(20),
-            [Olusturma_Tarihi] DATETIME,
-            [Atama_Tarihi] DATETIME,
-            [Cozum_Tarihi] DATETIME,
-            [Is_Gununde_mi] BIT,
-            [Mesai_Saatinde_mi] BIT,
-            [Hedef_Atama_Suresi_dk] INT,
-            [Gercek_Atama_Suresi_dk] INT,
-            [Hedef_Cozum_Suresi_dk] INT,
-            [Gercek_Cozum_Suresi_dk] INT,
-            [Atama_SLA_Uyumu] BIT,
-            [Cozum_SLA_Uyumu] BIT,
-            [Musteri_Memnuniyeti] FLOAT,
-            [Cozum_Detay] NVARCHAR(50),
-            [Tekrar_Acilma] BIT,
-            [Onceki_Ticket_ID] VARCHAR(10) NULL,
-            [Kaynak_Sistem] NVARCHAR(50),
-            [Cozum_Aciklamasi] NVARCHAR(MAX),
-            [Problem_Aciklamasi] NVARCHAR(MAX),
-            [Yapilan_Islem] NVARCHAR(MAX),
-            [Kullanilan_Arac] NVARCHAR(MAX),
-            [Root_Cause] NVARCHAR(MAX),
-            PRIMARY KEY ([Ticket_ID])
-        )
-        """)
-        print("Yeni tablo oluşturuldu.")
-        
-        # Veri oluştur ve ekle
-        baslangic_tarih = datetime(2023, 1, 1)
-        bitis_tarih = datetime(2024, 1, 31)
-        
-        TOPLAM_KAYIT = 50000
-        
-        for i in range(1, TOPLAM_KAYIT + 1):
-            ticket_id = f'TIC{i:06d}'
-            
-            # Kategori ve alt kategori seç
-            kategori = random.choice(list(kategoriler.keys()))
-            alt_kategori = random.choice(kategoriler[kategori])
-            
-            # Problem ve çözüm detaylarını seç
-            if alt_kategori in problem_detaylari:
-                problem = random.choice(problem_detaylari[alt_kategori])
-                
-                # Problem tipini belirle
-                if 'yavaş' in problem.lower():
-                    problem_tipi = 'Yavaşlık'
-                elif 'bağlantı' in problem.lower() or 'vpn' in problem.lower():
-                    problem_tipi = 'Bağlantı'
-                elif 'kağıt' in problem.lower():
-                    problem_tipi = 'Kağıt Sıkışması'
-                elif 'excel' in problem.lower():
-                    problem_tipi = 'Excel'
-                elif 'outlook' in problem.lower():
-                    problem_tipi = 'Outlook'
-                elif 'sap' in problem.lower():
-                    problem_tipi = 'SAP'
-                else:
-                    problem_tipi = 'Yavaşlık'  # Varsayılan tip
-                
-                cozum = get_solution_detail(kategori, alt_kategori, problem_tipi)
-            else:
-                problem = "Standart problem"
-                cozum = "Standart prosedür uygulandı"
-
-            # Diğer alanları oluştur
-            bolge = random.choice(['İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Antalya'])
-            oncelik = random.choice(['Düşük', 'Orta', 'Yüksek', 'Kritik'])
-            teknisyen = f'Teknisyen_{random.randint(1,10)}'
-            teknisyen_seviye = random.choice(['Junior', 'Mid-Level', 'Senior'])
-            
-            # Tarihleri oluştur
-            olusturma_tarihi = baslangic_tarih + timedelta(
-                days=random.randint(0, 30),
-                hours=random.randint(0, 23),
-                minutes=random.randint(0, 59)
-            )
-            
-            atama_tarihi = olusturma_tarihi + timedelta(minutes=random.randint(5, 120))
-            cozum_tarihi = atama_tarihi + timedelta(minutes=random.randint(30, 480))
-            
-            # İş günü ve mesai kontrolü
-            is_gununde = 1 if olusturma_tarihi.weekday() < 5 else 0
-            mesai_saatinde = 1 if 9 <= olusturma_tarihi.hour <= 18 else 0
-            
-            # SLA süreleri
-            hedef_atama = 60 if oncelik == 'Kritik' else 120
-            hedef_cozum = 240 if oncelik == 'Kritik' else 480
-            
-            gercek_atama = int((atama_tarihi - olusturma_tarihi).total_seconds() / 60)
-            gercek_cozum = int((cozum_tarihi - atama_tarihi).total_seconds() / 60)
-            
-            # SLA uyumları
-            atama_sla = 1 if gercek_atama <= hedef_atama else 0
-            cozum_sla = 1 if gercek_cozum <= hedef_cozum else 0
-            
-            # Müşteri memnuniyeti
-            memnuniyet = round(random.uniform(3.0, 5.0), 1)
-            
-            # Yapılan işlem ve kullanılan araçlar
-            yapilan_islem = f"1-Problem analizi yapıldı\n2-{cozum}"
-            kullanilan_arac = random.choice(['Remote Desktop', 'TeamViewer', 'VNC', 'Yerinde Müdahale'])
-            
-            # Root cause
-            root_cause = random.choice([
-                'Kullanıcı Hatası',
-                'Donanım Arızası',
-                'Yazılım Hatası',
-                'Ağ Problemi',
-                'Sistem Güncellemesi'
-            ])
-
-            # Verileri ekle
-            cursor.execute("""
-            INSERT INTO Tickets (
-                Ticket_ID, Bolge, Oncelik, Kategori, Alt_Kategori,
-                Teknisyen, Teknisyen_Seviye, Olusturma_Tarihi,
-                Atama_Tarihi, Cozum_Tarihi, Is_Gununde_mi,
-                Mesai_Saatinde_mi, Hedef_Atama_Suresi_dk,
-                Gercek_Atama_Suresi_dk, Hedef_Cozum_Suresi_dk,
-                Gercek_Cozum_Suresi_dk, Atama_SLA_Uyumu,
-                Cozum_SLA_Uyumu, Musteri_Memnuniyeti,
-                Problem_Aciklamasi, Cozum_Aciklamasi,
-                Yapilan_Islem, Kullanilan_Arac, Root_Cause
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                ticket_id, bolge, oncelik, kategori, alt_kategori,
-                teknisyen, teknisyen_seviye, olusturma_tarihi,
-                atama_tarihi, cozum_tarihi, is_gununde,
-                mesai_saatinde, hedef_atama, gercek_atama,
-                hedef_cozum, gercek_cozum, atama_sla, cozum_sla,
-                memnuniyet, problem, cozum, yapilan_islem,
-                kullanilan_arac, root_cause
-            ))
-
-            if i % 1000 == 0:
-                print(f"{i} adet ticket oluşturuldu ({(i/TOPLAM_KAYIT)*100:.1f}%)")
-                conn.commit()
-
-        conn.commit()
+        initialize_database(cursor, conn)
+        baslangic_tarih, bitis_tarih, TOPLAM_KAYIT = initialize_test_data()
+        generate_ticket_data(baslangic_tarih, bitis_tarih, TOPLAM_KAYIT, cursor, conn)
         print(f"Toplam {TOPLAM_KAYIT} adet ticket başarıyla oluşturuldu.")
 
     except Exception as e:
-        print("Hata:", str(e))
+        print("Hata:", e)
         conn.rollback()
     finally:
         cursor.close()
