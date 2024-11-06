@@ -167,6 +167,7 @@ cozum_detaylari = {
 # Problem detayları
 problem_detaylari = {
     'PC Arıza': [
+        'Bilgisayar neden Çalışmıyor',
         'Bilgisayar çok yavaş açılıyor ve fan sesi çok yüksek',
         'Bilgisayar sürekli donuyor ve yeniden başlıyor',
         'Ekran görüntüsü gelmiyor, sadece ses var',
@@ -174,6 +175,7 @@ problem_detaylari = {
         'Mavi ekran hatası veriyor'
     ],
     'Yazıcı Arıza': [
+        'Yazıcı çok gürültülü çalışıyor',
         'Yazıcı kağıt sıkıştırıyor ve hata veriyor',
         'Çıktılar silik ve soluk çıkıyor',
         'Yazıcı ağda görünmüyor',
@@ -181,6 +183,7 @@ problem_detaylari = {
         'Yazıcı çıktı almıyor, hata veriyor'
     ],
     'Office': [
+        'Serial Key Problemi',
         'Excel dosyası açılmıyor, sürekli kilitleniyor',
         'Outlook sürekli yanıt vermiyor hatası veriyor',
         'Word belgeleri kaydedilemiyor',
@@ -188,6 +191,7 @@ problem_detaylari = {
         'Outlook e-posta göndermiyor'
     ],
     'ERP': [
+        'SA P neden açılmıyor',
         'SAP sistemine giriş yapılamıyor',
         'SAP ekranı donuyor ve yanıt vermiyor',
         'SAP raporları açılmıyor',
@@ -195,6 +199,7 @@ problem_detaylari = {
         'SAP performansı çok yavaş'
     ],
     'VPN': [
+        'VPN registration'
         'VPN bağlantısı kurulamıyor, timeout hatası',
         'VPN bağlantısı çok yavaş',
         'VPN sürekli kopuyor',
@@ -202,6 +207,7 @@ problem_detaylari = {
         'VPN authentication hatası'
     ],
     'İnternet': [
+        'Şifre istiyor',
         'İnternet bağlantısı yok',
         'İnternet çok yavaş',
         'Web sayfaları açılmıyor',
@@ -209,6 +215,7 @@ problem_detaylari = {
         'İnternet sürekli kesiliyor'
     ],
     'Ağ Erişimi': [
+        'username ve password hatası',
         'Paylaşımlı klasörlere erişilemiyor',
         'Domain oturumu açılmıyor',
         'Ağ yazıcılarına erişilemiyor',

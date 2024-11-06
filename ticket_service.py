@@ -15,15 +15,25 @@ nlp.initialize()  # Sadece ilk çağrıda başlatılacak
 def health_check():
     return jsonify({'status': 'ok', 'message': 'Service is running'})
 
-def get_similar_tickets(problem, model, kategori, alt_kategori):
+def get_similar_tickets(problem, model, kategori, alt_kategori, musteri_id):
     """Benzer ticketları getir"""
     try:
+        # Problemi normalize et
+        normalized_problem = nlp._normalize_text(problem)
+        
+        # Kategori ve alt kategoriye göre filtrele
+        filtered_df = nlp.df[
+            (nlp.df['kategori'] == kategori) & 
+            (nlp.df['alt_kategori'] == alt_kategori)
+        ]
+        
         # NLP motoruna gönder
         similar_tickets = nlp.get_similar_tickets(
-            problem=problem,
+            problem=normalized_problem,
             model=model,
             kategori=kategori,
-            alt_kategori=alt_kategori
+            alt_kategori=alt_kategori,
+            musteri_id=musteri_id
         )
         return similar_tickets
     except Exception as e:
@@ -43,7 +53,8 @@ def get_ticket_details():
             problem=problem,
             model=model,
             kategori=kategori,
-            alt_kategori=alt_kategori
+            alt_kategori=alt_kategori,
+            musteri_id=data.get('musteri_id')
         )
         
         return jsonify(similar_tickets)
